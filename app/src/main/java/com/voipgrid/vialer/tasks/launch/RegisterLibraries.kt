@@ -6,6 +6,9 @@ import com.github.anrwatchdog.ANRWatchDog
 import com.github.tamir7.contacts.Contacts
 import com.google.gson.GsonBuilder
 import com.voipgrid.vialer.VialerApplication
+import com.voipgrid.vialer.koin.vialerModule
+import org.koin.android.ext.koin.androidContext
+import org.koin.core.context.startKoin
 
 /**
  * Register/bootstrap all the libraries that require it.
@@ -17,5 +20,12 @@ class RegisterLibraries : OnLaunchTask {
         ANRWatchDog().start()
         Contacts.initialize(application)
         Kotpref.gson = GsonBuilder().create()
+
+        startKoin {
+            // Android context
+            androidContext(application)
+            // modules
+            modules(vialerModule)
+        }
     }
 }
