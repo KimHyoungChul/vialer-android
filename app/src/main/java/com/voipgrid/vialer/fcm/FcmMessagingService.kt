@@ -24,6 +24,10 @@ import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import org.koin.core.KoinComponent
 
+/**
+ * Listen to messages from FCM. The backend server sends us FCM notifications when we have
+ * incoming calls.
+ */
 class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
 
     private val logger = Logger(this)
@@ -32,6 +36,12 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
     private val nativeCallManager: NativeCallManager by inject()
     private val middleware: Middleware by inject()
 
+    /**
+     * The number of times the middleware will attempt to send a push notification
+     * before it gives up and the string stores the last call we have SUCCESSFULLY handled and
+     * started the SipService for.
+     *
+     */
     companion object {
         private const val MAX_MIDDLEWARE_PUSH_ATTEMPTS = 8
         private var lastHandledCall: String? = null
@@ -56,6 +66,12 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
         logger.d("Message deleted on the FCM server.")
     }
 
+    /**
+     * Handle a push message with a call request type.
+     *
+     * @param remoteMessage
+     * @param remoteMessageData
+     */
     private fun handleCall(remoteMessage: RemoteMessage, remoteMessageData: RemoteMessageData) {
         logCurrentState(remoteMessageData)
 
@@ -73,6 +89,12 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
         }
     }
 
+    /**
+     * Handle a push message with a message request type.
+     *
+     * @param remoteMessage
+     * @param remoteMessageData
+     */
     private fun handleMessage(remoteMessage: RemoteMessage, remoteMessageData: RemoteMessageData) {
 
         if (!remoteMessageData.isRegisteredOnOtherDeviceMessage) {
@@ -87,6 +109,13 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
         LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(VOIP_HAS_BEEN_DISABLED))
     }
 
+    /**
+     * Performs various tasks that are required when we are rejecting a call due to an insufficient
+     * network connection.
+     *
+     * @param remoteMessage The remote message that we are handling.
+     * @param remoteMessageData The remote message data that we are handling.
+     */
     private fun handleInsufficientConnection(remoteMessage: RemoteMessage, remoteMessageData: RemoteMessageData) {
         if (hasExceededMaximumAttempts(remoteMessageData)) {
             VialerStatistics.incomingCallFailedDueToInsufficientNetwork(remoteMessage)
@@ -97,12 +126,37 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
         })
     }
 
+    /**
+     * Check if we have a good enough connection to accept an incoming call.
+     *
+     * @return TRUE if we have a good enough connection, otherwise FALSE.
+     */
     private fun isConnectionSufficient() = connectivityHelper.hasNetworkConnection() && connectivityHelper.hasFastData()
 
+    /**
+     * Check to see if the SIP service is currently running, this means that there is already a call
+     * in progress and we can not accept further calls.
+     *
+     * @return TRUE if there is an active call, otherwise FALSE
+     */
     private fun isAVialerCallAlreadyInProgress() = SipService.sipServiceActive;
 
+    /**
+     * Check if we have reached or exceeded the maximum number of attempts that we
+     * accept from the middleware.
+     *
+     * @param remoteMessageData The remote message data that we are handling.
+     * @return TRUE if we have reached or exceeded maximum attempts, otherwise FALSE.
+     */
     private fun hasExceededMaximumAttempts(remoteMessageData: RemoteMessageData) = remoteMessageData.getAttemptNumber() >= MAX_MIDDLEWARE_PUSH_ATTEMPTS
 
+    /**
+     * Performs various tasks that are necessary when rejecting a call based on the fact that there is
+     * already a Vialer call in progress.
+     *
+     * @param remoteMessage The remote message that we are handling.
+     * @param remoteMessageData The remote message data that we are handling.
+     */
     private fun rejectDueToVialerCallAlreadyInProgress(remoteMessage: RemoteMessage, remoteMessageData: RemoteMessageData) {
         logger.d("Reject due to call already in progress")
 
@@ -111,6 +165,13 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
         sendCallFailedDueToOngoingVialerCallMetric(remoteMessage, remoteMessageData.requestToken)
     }
 
+    /**
+     * Performs various tasks that are necessary when rejecting a call based on the fact that there is
+     * already a Vialer call in progress.
+     *
+     * @param remoteMessage The remote message that we are handling.
+     * @param remoteMessageData The remote message data that we are handling.
+     */
     private fun rejectDueToNativeCallAlreadyInProgress(remoteMessage: RemoteMessage, remoteMessageData: RemoteMessageData) {
         logger.d("Reject due to native call already in progress")
 
@@ -119,6 +180,12 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
         VialerStatistics.incomingCallFailedDueToOngoingGsmCall(remoteMessage)
     }
 
+    /**
+     * Send the vialer metric for ongoing call if appropriate.
+     *
+     * @param remoteMessage
+     * @param requestToken
+     */
     private fun sendCallFailedDueToOngoingVialerCallMetric(remoteMessage: RemoteMessage, requestToken: String) {
         if (lastHandledCall != null && lastHandledCall == requestToken) {
             logger.i("Push notification ($lastHandledCall) is being rejected because there is a Vialer call already in progress but not sending metric because it was already handled successfully")
@@ -128,6 +195,12 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
         VialerStatistics.incomingCallFailedDueToOngoingVialerCall(remoteMessage)
     }
 
+    /**
+     * Notify the middleware server that we are, in fact, alive.
+     *
+     * @param remoteMessageData The remote message data from the remote message that we are handling.
+     * @param isAvailable TRUE if the phone is ready to accept the incoming call, FALSE if it is not available.
+     */
     private fun replyServer(remoteMessageData: RemoteMessageData, isAvailable: Boolean) = GlobalScope.launch {
         val response =  middleware.reply(remoteMessageData.requestToken, isAvailable, remoteMessageData.messageStartTime).execute()
         if (response.isSuccessful) {
@@ -135,6 +208,12 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
         }
     }
 
+    /**
+     * Start the SIP service with the relevant data from the push message in the
+     * intent.
+     *
+     * @param remoteMessageData
+     */
     private fun startSipService(remoteMessageData: RemoteMessageData) {
         val intent = Intent(this, SipService::class.java).apply {
             action = SipService.Actions.HANDLE_INCOMING_CALL
@@ -152,8 +231,21 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
         }
     }
 
+    /**
+     * Device can ben in Idle mode when it's been idling to long. This means that network connectivity
+     * is reduced. So we check if we are in that mode and the connection is insufficient.
+     * just return and don't reply to the middleware for now.
+     *
+     * @return
+     */
     private fun isDeviceInIdleMode() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && powerManager.isDeviceIdleMode
 
+    /**
+     * Log some information about our current state to help determine what state the phone is in when
+     * a push notification is incoming.
+     *
+     * @param remoteMessageData
+     */
     private fun logCurrentState(remoteMessageData: RemoteMessageData) {
         listOf(
                 "SipService Active: " + SipService.sipServiceActive,    "CurrentConnection: " + connectivityHelper.getConnectionTypeString(),
