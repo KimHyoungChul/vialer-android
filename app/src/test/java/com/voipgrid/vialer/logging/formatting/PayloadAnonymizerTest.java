@@ -2,7 +2,6 @@ package com.voipgrid.vialer.logging.formatting;
 
 import static org.junit.Assert.assertFalse;
 
-import com.voipgrid.vialer.fcm.FcmMessagingService;
 import com.voipgrid.vialer.logging.formatting.formatters.PayloadAnonymizer;
 
 import org.junit.Test;
