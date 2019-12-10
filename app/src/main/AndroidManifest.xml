@@ -86,6 +86,13 @@
             android:screenOrientation="portrait" >
         </activity>
 
+        <service
+            android:name=".fcm.FcmMessagingService">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".util.OnBootReceiver"
             android:label="OnBootReceiverBroadcastReceiver"
