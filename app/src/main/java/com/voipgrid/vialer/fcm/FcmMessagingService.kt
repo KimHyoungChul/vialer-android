@@ -76,7 +76,7 @@ class FcmMessagingService : FirebaseMessagingService(), KoinComponent {
         logCurrentState(remoteMessageData)
 
         when {
-            !isConnectionSufficient() -> rejectDueToVialerCallAlreadyInProgress(remoteMessage, remoteMessageData)
+            !isConnectionSufficient() -> handleInsufficientConnection(remoteMessage, remoteMessageData)
             isAVialerCallAlreadyInProgress() -> rejectDueToVialerCallAlreadyInProgress(remoteMessage, remoteMessageData)
             nativeCallManager.isBusyWithNativeCall ->  rejectDueToNativeCallAlreadyInProgress(remoteMessage, remoteMessageData)
             else -> {
